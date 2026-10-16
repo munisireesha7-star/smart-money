@@ -13,10 +13,11 @@ from uuid import uuid4
 
 from flask import Flask, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 from flask_wtf.csrf import CSRFProtect
+import psycopg
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
-MAX_PHOTO_SIZE = 5 * 1024 * 1024
+MAX_PHOTO_SIZE = 4 * 1024 * 1024
 app = Flask(__name__)
 app.config.update(
     SECRET_KEY=os.environ.get("SMART_MONEY_SECRET_KEY") or secrets.token_hex(32),
@@ -30,19 +31,87 @@ app.config.update(
 csrf = CSRFProtect(app)
 DATABASE = Path(__file__).with_name("smart_money.db")
 CASH_PHOTO_DIR = Path(app.instance_path) / "uploads" / "cash"
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if not os.environ.get("SMART_MONEY_SECRET_KEY"):
+    if os.environ.get("VERCEL"):
+        raise RuntimeError(
+            "SMART_MONEY_SECRET_KEY is required on Vercel. Configure a persistent secret in Project Settings."
+        )
     app.logger.warning(
         "SMART_MONEY_SECRET_KEY is not set; sessions will not survive app restarts. "
         "Set a strong random secret in the environment for persistent deployments."
     )
 
 
+class HybridRow(dict):
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return tuple(self.values())[key]
+        return super().__getitem__(key)
+
+
+def postgres_row_factory(cursor, row):
+    names = [column.name for column in cursor.description]
+    return lambda values: HybridRow(zip(names, values))
+
+
+def using_postgres():
+    return bool(app.config.get("DATABASE_URL") or DATABASE_URL)
+
+
+def adapt_sql(statement):
+    if not using_postgres():
+        return statement
+    statement = statement.replace(
+        "INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY"
+    )
+    statement = re.sub(r"\bREAL\b", "DOUBLE PRECISION", statement, flags=re.IGNORECASE)
+    statement = re.sub(r"\bBLOB\b", "BYTEA", statement, flags=re.IGNORECASE)
+    statement = re.sub(
+        r"\b([A-Za-z_]\w*)\s*=\s*\?\s+COLLATE NOCASE\b",
+        r"LOWER(\1) = LOWER(?)",
+        statement,
+        flags=re.IGNORECASE,
+    )
+    statement = re.sub(r"\s+COLLATE NOCASE", "", statement, flags=re.IGNORECASE)
+    statement = re.sub(r"\bLIKE\b", "ILIKE", statement, flags=re.IGNORECASE)
+    statement = statement.replace("?", "%s")
+    return statement
+
+
+class DatabaseConnection:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
+    def execute(self, statement, parameters=()):
+        return self.connection.execute(adapt_sql(statement), parameters)
+
+    def executemany(self, statement, parameters):
+        return self.connection.executemany(adapt_sql(statement), parameters)
+
+
 @contextmanager
 def connect_db():
-    connection = sqlite3.connect(DATABASE)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
+    database_url = app.config.get("DATABASE_URL") or DATABASE_URL
+    if database_url:
+        connection = psycopg.connect(
+            database_url,
+            row_factory=postgres_row_factory,
+            connect_timeout=10,
+        )
+    else:
+        if os.environ.get("VERCEL"):
+            raise RuntimeError(
+                "DATABASE_URL is required on Vercel. Configure a persistent PostgreSQL database."
+            )
+        connection = sqlite3.connect(DATABASE)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+    connection = DatabaseConnection(connection)
     try:
         yield connection
         connection.commit()
@@ -100,11 +169,12 @@ def initialize_database():
             CREATE TABLE IF NOT EXISTS cash_transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 direction TEXT NOT NULL CHECK(direction IN ('added', 'removed')),
-                amount_paise INTEGER NOT NULL CHECK(amount_paise > 0),
+                amount_paise BIGINT NOT NULL CHECK(amount_paise > 0),
                 location TEXT NOT NULL,
                 transaction_time TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 photo_filename TEXT,
+                photo_data BLOB,
                 user_id INTEGER REFERENCES users(id),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
@@ -115,9 +185,9 @@ def initialize_database():
             CREATE TABLE IF NOT EXISTS cash_checks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 location TEXT NOT NULL,
-                expected_paise INTEGER NOT NULL,
-                actual_paise INTEGER NOT NULL,
-                difference_paise INTEGER NOT NULL,
+                expected_paise BIGINT NOT NULL,
+                actual_paise BIGINT NOT NULL,
+                difference_paise BIGINT NOT NULL,
                 counted_at TEXT NOT NULL,
                 ledger_latest_at TEXT NOT NULL,
                 ledger_complete INTEGER NOT NULL CHECK(ledger_complete IN (0, 1)),
@@ -150,7 +220,10 @@ def initialize_database():
             )
             """
         )
-        db.execute("INSERT OR IGNORE INTO notification_preferences (id) VALUES (1)")
+        db.execute(
+            "INSERT INTO notification_preferences (id) VALUES (1) "
+            "ON CONFLICT (id) DO NOTHING"
+        )
         db.execute(
             """
             CREATE TABLE IF NOT EXISTS app_notifications (
@@ -186,6 +259,10 @@ def initialize_database():
             )
             """
         )
+        db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx "
+            "ON users (LOWER(username))"
+        )
         for table in (
             "transactions",
             "cash_transactions",
@@ -193,13 +270,28 @@ def initialize_database():
             "cash_check_status_history",
             "app_notifications",
         ):
-            columns = {
-                column["name"]
-                for column in db.execute(f"PRAGMA table_info({table})").fetchall()
-            }
+            if using_postgres():
+                columns = {
+                    column["column_name"]
+                    for column in db.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = current_schema() AND table_name = ?",
+                        (table,),
+                    ).fetchall()
+                }
+            else:
+                columns = {
+                    column["name"]
+                    for column in db.execute(f"PRAGMA table_info({table})").fetchall()
+                }
             if "user_id" not in columns:
                 db.execute(
                     f"ALTER TABLE {table} ADD COLUMN user_id INTEGER REFERENCES users(id)"
+                )
+            if table == "cash_transactions" and "photo_data" not in columns:
+                db.execute(
+                    "ALTER TABLE cash_transactions ADD COLUMN photo_data "
+                    + ("BYTEA" if using_postgres() else "BLOB")
                 )
         db.execute(
             """
@@ -212,10 +304,9 @@ def initialize_database():
             """
         )
         db.execute(
-            "INSERT OR IGNORE INTO settings (id, monthly_budget, alert_threshold, currency) "
-            "VALUES (1, 4000, 450, 'USD')"
+            "INSERT INTO settings (id, monthly_budget, alert_threshold, currency) "
+            "VALUES (1, 4000, 450, 'USD') ON CONFLICT (id) DO NOTHING"
         )
-    CASH_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_settings():
@@ -322,7 +413,7 @@ def parse_cash_form(form, files):
     if photo and photo.filename:
         photo_data = photo.stream.read(MAX_PHOTO_SIZE + 1)
         if len(photo_data) > MAX_PHOTO_SIZE:
-            raise ValueError("The photo must be 5 MB or smaller.")
+            raise ValueError("The photo must be 4 MB or smaller.")
         if photo_data.startswith(b"\xff\xd8\xff"):
             photo_extension = ".jpg"
         elif photo_data.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -378,10 +469,8 @@ def parse_cash_count(form):
     return location, int(actual_amount * 100), counted_at, counted_time
 
 
-def store_cash_photo(photo_data, extension):
-    filename = f"{uuid4().hex}{extension}"
-    (CASH_PHOTO_DIR / filename).write_bytes(photo_data)
-    return filename
+def new_cash_photo_filename(extension):
+    return f"{uuid4().hex}{extension}"
 
 
 def remove_cash_photo(filename):
@@ -434,10 +523,10 @@ def register():
         try:
             with connect_db() as db:
                 cursor = db.execute(
-                    "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                    "INSERT INTO users (username, password_hash) VALUES (?, ?) RETURNING id",
                     (username, generate_password_hash(password)),
                 )
-                user_id = cursor.lastrowid
+                user_id = cursor.fetchone()["id"]
                 db.execute(
                     "INSERT INTO user_settings (user_id) VALUES (?)", (user_id,)
                 )
@@ -445,7 +534,7 @@ def register():
                     "INSERT INTO user_notification_preferences (user_id) VALUES (?)",
                     (user_id,),
                 )
-        except sqlite3.IntegrityError:
+        except (sqlite3.IntegrityError, psycopg.errors.UniqueViolation):
             flash("That username is already in use. Please choose another.", "error")
             return render_template("auth.html", mode="register")
         session.clear()
@@ -468,7 +557,8 @@ def login():
             return render_template("auth.html", mode="login")
         with connect_db() as db:
             user = db.execute(
-                "SELECT id, username, password_hash FROM users WHERE username = ? COLLATE NOCASE",
+                "SELECT id, username, password_hash FROM users "
+                "WHERE LOWER(username) = LOWER(?)",
                 (username,),
             ).fetchone()
         if not user or not check_password_hash(user["password_hash"], password):
@@ -533,12 +623,13 @@ def records():
             return redirect(url_for("records"))
         photo_filename = None
         if record["photo_data"]:
-            photo_filename = store_cash_photo(record["photo_data"], record["photo_extension"])
+            photo_filename = new_cash_photo_filename(record["photo_extension"])
         with connect_db() as db:
             db.execute(
                 "INSERT INTO cash_transactions "
-                "(direction, amount_paise, location, transaction_time, description, photo_filename, user_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(direction, amount_paise, location, transaction_time, description, "
+                "photo_filename, photo_data, user_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record["direction"],
                     record["amount_paise"],
@@ -546,6 +637,7 @@ def records():
                     record["transaction_time"],
                     record["description"],
                     photo_filename,
+                    record["photo_data"],
                     g.user["id"],
                 ),
             )
@@ -671,18 +763,21 @@ def edit_cash_record(transaction_id):
             return redirect(url_for("edit_cash_record", transaction_id=transaction_id))
 
         photo_filename = transaction["photo_filename"]
+        photo_data = transaction["photo_data"]
         old_photo = None
         if record["photo_data"]:
-            photo_filename = store_cash_photo(record["photo_data"], record["photo_extension"])
+            photo_filename = new_cash_photo_filename(record["photo_extension"])
+            photo_data = record["photo_data"]
             old_photo = transaction["photo_filename"]
         elif request.form.get("remove_photo") == "yes":
             photo_filename = None
+            photo_data = None
             old_photo = transaction["photo_filename"]
 
         with connect_db() as db:
             db.execute(
                 "UPDATE cash_transactions SET direction = ?, amount_paise = ?, location = ?, "
-                "transaction_time = ?, description = ?, photo_filename = ? "
+                "transaction_time = ?, description = ?, photo_filename = ?, photo_data = ? "
                 "WHERE id = ? AND user_id = ?",
                 (
                     record["direction"],
@@ -691,6 +786,7 @@ def edit_cash_record(transaction_id):
                     record["transaction_time"],
                     record["description"],
                     photo_filename,
+                    photo_data,
                     transaction_id,
                     g.user["id"],
                 ),
@@ -717,7 +813,8 @@ def edit_cash_record(transaction_id):
 def delete_cash_record(transaction_id):
     with connect_db() as db:
         transaction = db.execute(
-            "SELECT photo_filename FROM cash_transactions WHERE id = ? AND user_id = ?",
+            "SELECT photo_filename, photo_data FROM cash_transactions "
+            "WHERE id = ? AND user_id = ?",
             (transaction_id, g.user["id"]),
         ).fetchone()
         cursor = db.execute(
@@ -725,7 +822,7 @@ def delete_cash_record(transaction_id):
             (transaction_id, g.user["id"]),
         )
     if cursor.rowcount:
-        if transaction["photo_filename"]:
+        if transaction["photo_filename"] and transaction["photo_data"] is None:
             remove_cash_photo(transaction["photo_filename"])
         flash("Cash transaction deleted. Your balance has been recalculated.", "success")
     else:
@@ -737,21 +834,27 @@ def delete_cash_record(transaction_id):
 def cash_photo(filename):
     with connect_db() as db:
         photo = db.execute(
-            "SELECT 1 FROM cash_transactions WHERE photo_filename = ? AND user_id = ?",
+            "SELECT photo_filename, photo_data FROM cash_transactions "
+            "WHERE photo_filename = ? AND user_id = ?",
             (filename, g.user["id"]),
         ).fetchone()
     if not photo or Path(filename).name != filename:
         return "", 404
-    photo_path = CASH_PHOTO_DIR / filename
     mimetype = {
         ".jpg": "image/jpeg",
         ".png": "image/png",
         ".webp": "image/webp",
-    }.get(photo_path.suffix.lower())
-    if not mimetype or not photo_path.is_file():
+    }.get(Path(filename).suffix.lower())
+    if not mimetype:
         return "", 404
+    image_bytes = photo["photo_data"]
+    if image_bytes is None:
+        photo_path = CASH_PHOTO_DIR / filename
+        if not photo_path.is_file():
+            return "", 404
+        image_bytes = photo_path.read_bytes()
     response = send_file(
-        BytesIO(photo_path.read_bytes()),
+        BytesIO(image_bytes),
         mimetype=mimetype,
         download_name=filename,
         conditional=False,
@@ -851,10 +954,11 @@ def create_cash_check():
         expected_paise = ledger["expected_paise"]
         difference_paise = actual_paise - expected_paise
         status = "New" if difference_paise else None
-        db.execute(
+        check_cursor = db.execute(
             "INSERT INTO cash_checks "
             "(location, expected_paise, actual_paise, difference_paise, counted_at, "
-            "ledger_latest_at, ledger_complete, status, user_id) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)",
+            "ledger_latest_at, ledger_complete, status, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) RETURNING id",
             (
                 location,
                 expected_paise,
@@ -867,7 +971,7 @@ def create_cash_check():
             ),
         )
         if status:
-            check_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+            check_id = check_cursor.fetchone()["id"]
             db.execute(
                 "INSERT INTO cash_check_status_history (check_id, old_status, new_status, user_id) "
                 "VALUES (?, ?, ?, ?)",

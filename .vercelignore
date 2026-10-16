@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+smart_money.db
+smart_money.db-shm
+smart_money.db-wal
+instance/uploads/
+.env
+.env.*
+!.env.example
+.git/
+.vscode/

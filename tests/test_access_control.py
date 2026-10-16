@@ -94,10 +94,11 @@ class AccessControlTests(unittest.TestCase):
                 "SELECT id FROM users WHERE username = 'alice'"
             ).fetchone()
             cash = db.execute(
-                "SELECT id, photo_filename FROM cash_transactions WHERE user_id = ?",
+                "SELECT id, photo_filename, photo_data FROM cash_transactions WHERE user_id = ?",
                 (alice_user["id"],),
             ).fetchone()
         self.assertIsNotNone(cash["photo_filename"])
+        self.assertEqual(cash["photo_data"], make_png())
 
         alice_records = self.alice.get("/records")
         bob_records = self.bob.get("/records")
@@ -469,6 +470,31 @@ class AccessControlTests(unittest.TestCase):
                 ).fetchone()[0],
                 1,
             )
+
+    def test_postgres_sql_adapter_emits_supported_sql(self):
+        previous_url = smart_money.app.config.get("DATABASE_URL")
+        smart_money.app.config["DATABASE_URL"] = "postgresql://test"
+        try:
+            schema = smart_money.adapt_sql(
+                "CREATE TABLE cash_transactions ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, amount REAL, photo BLOB)"
+            )
+            self.assertIn("SERIAL PRIMARY KEY", schema)
+            self.assertIn("DOUBLE PRECISION", schema)
+            self.assertIn("BYTEA", schema)
+
+            query = smart_money.adapt_sql(
+                "SELECT * FROM transactions WHERE title LIKE ? "
+                "AND username = ? COLLATE NOCASE"
+            )
+            self.assertIn("ILIKE %s", query)
+            self.assertIn("LOWER(username) = LOWER(%s)", query)
+            self.assertNotIn("NOCASE", query)
+        finally:
+            if previous_url is None:
+                smart_money.app.config.pop("DATABASE_URL", None)
+            else:
+                smart_money.app.config["DATABASE_URL"] = previous_url
 
 
 if __name__ == "__main__":
