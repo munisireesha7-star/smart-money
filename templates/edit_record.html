@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Edit Cash Transaction{% endblock %}
+{% block breadcrumb %}Money Records / Edit{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><span class="live-dot"></span> UPDATE YOUR CASH HISTORY</div><h1>Edit transaction</h1><p>Changing this record will automatically update the expected balance.</p></div><a class="button button-secondary" href="{{ url_for('records') }}">← Back to records</a></div>
+<section class="panel add-record-panel cash-form-panel edit-cash-panel"><div class="panel-heading"><div><h2>Update transaction</h2><p>Review the details before saving your changes.</p></div><span class="form-mark">✎</span></div>
+    <form class="record-form cash-record-form" method="post" enctype="multipart/form-data" onsubmit="return confirm('Save changes to this cash transaction? The expected balance will be recalculated.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>What happened?<select name="direction" required><option value="added" {% if transaction.direction == 'added' %}selected{% endif %}>Money added</option><option value="removed" {% if transaction.direction == 'removed' %}selected{% endif %}>Money removed</option></select></label>
+        <label>Amount (INR)<span class="cash-input-wrap"><span>₹</span><input name="amount" type="number" min="0.01" max="999999999999.99" step="0.01" value="{{ amount }}" required></span></label>
+        <label>Storage location<input name="location" value="{{ transaction.location }}" maxlength="80" required></label>
+        <label>Date and time<input name="transaction_time" type="datetime-local" value="{{ transaction.transaction_time }}" required></label>
+        <label class="cash-description-label">Description <span class="optional-label">(optional)</span><input name="description" value="{{ transaction.description }}" maxlength="500"></label>
+        <label class="photo-field">Photo of storage place <span class="optional-label">(optional)</span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"><small>Upload a new photo or leave blank to keep the current one.</small></label>
+        {% if photo_url %}<div class="current-photo"><a href="{{ photo_url }}" target="_blank" rel="noopener"><img src="{{ photo_url }}" alt="Current photo of {{ transaction.location }}"></a><label><input type="checkbox" name="remove_photo" value="yes"> Remove current photo</label></div>{% endif %}
+        <div class="form-submit"><button class="button button-primary" type="submit">Save changes <span>→</span></button></div>
+    </form>
+</section>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block breadcrumb %}Settings{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><span class="live-dot"></span> MAKE IT YOURS</div><h1>Your settings</h1><p>A few simple choices to make Smart Money work for you.</p></div></div>
+<section class="settings-layout"><div class="settings-nav"><a class="settings-nav-item selected" href="#money-settings"><span>◉</span> Money & alerts</a><a class="settings-nav-item" href="#notification-settings"><span>♧</span> Notifications</a><a class="settings-nav-item" href="#about-settings"><span>✧</span> About Smart Money</a></div>
+    <div class="settings-main"><section class="panel settings-panel" id="money-settings"><div class="panel-heading"><div><h2>Money & alerts</h2><p>Set a budget and choose when you’d like a heads-up.</p></div><span class="settings-icon">⚙</span></div>
+        <form method="post" action="{{ url_for('settings_page') }}" class="settings-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="settings-field"><span><strong>Monthly spending budget</strong><small>Your spending goal for each month.</small></span><span class="settings-input-wrap"><span class="currency-prefix">{{ currency }}</span><input name="monthly_budget" type="number" min="0.01" step="0.01" value="{{ settings.monthly_budget }}" required></span></label>
+            <label class="settings-field"><span><strong>Alert me about purchases over</strong><small>We’ll show you a friendly alert when an expense reaches this amount.</small></span><span class="settings-input-wrap"><span class="currency-prefix">{{ currency }}</span><input name="alert_threshold" type="number" min="0.01" step="0.01" value="{{ settings.alert_threshold }}" required></span></label>
+            <label class="settings-field"><span><strong>Currency</strong><small>Choose how amounts appear across your account.</small></span><select class="currency-select" name="currency"><option value="USD" {% if currency == 'USD' %}selected{% endif %}>USD — US Dollar</option><option value="EUR" {% if currency == 'EUR' %}selected{% endif %}>EUR — Euro</option><option value="GBP" {% if currency == 'GBP' %}selected{% endif %}>GBP — British Pound</option><option value="INR" {% if currency == 'INR' %}selected{% endif %}>INR — Indian Rupee</option></select></label>
+            <div class="settings-actions"><span>Your records stay saved on this device.</span><button class="button button-primary" type="submit">Save changes <span>→</span></button></div>
+        </form>
+    </section>
+    <section class="panel settings-panel notification-settings-panel" id="notification-settings"><div class="panel-heading"><div><h2>In-app notifications</h2><p>Choose which updates appear in your Alerts inbox.</p></div><span class="settings-icon">◉</span></div>
+        <form method="post" action="{{ url_for('save_notification_preferences') }}" class="settings-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="settings-field notification-preference-field"><span><strong>Possible cash discrepancies</strong><small>Notify me when a manual cash count differs from the saved expected balance.</small></span><input class="preference-checkbox" type="checkbox" name="discrepancy_notifications" {% if notification_preferences.discrepancy_notifications %}checked{% endif %}></label>
+            <label class="settings-field notification-preference-field"><span><strong>Review status updates</strong><small>Notify me when a possible discrepancy changes status.</small></span><input class="preference-checkbox" type="checkbox" name="status_notifications" {% if notification_preferences.status_notifications %}checked{% endif %}></label>
+            <div class="settings-actions"><span>Notifications stay in this app. Email delivery is not configured.</span><button class="button button-primary" type="submit">Save preferences <span>→</span></button></div>
+        </form>
+        <div class="notification-test-row"><div><strong>Test your notifications</strong><span>Add a clearly labeled test message to your Alerts inbox.</span></div><form method="post" action="{{ url_for('send_test_notification') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-secondary" type="submit">Send test notification</button></form></div>
+    </section>
+    <section class="panel about-panel" id="about-settings"><div class="about-mark">↗</div><div><h2>About Smart Money</h2><p>A simple, private place to understand your money. Your data is stored locally in this app’s SQLite database.</p></div><span class="version-pill">PERSONAL MONEY TOOL</span></section></div>
+</section>
+{% endblock %}

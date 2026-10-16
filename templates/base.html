@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#142b4a">
+    <title>{% block title %}Smart Money{% endblock %} · Home Money Loss Detection</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <a class="brand" href="{{ url_for('home') }}">
+                <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 17.5 9.2 12l3.5 3.4L20 7.5"/><path d="M14.8 7.5H20v5.2"/></svg></span>
+                <span class="brand-copy"><strong>smart<span>money</span></strong><small>YOUR MONEY, IN FOCUS</small></span>
+            </a>
+            <div class="nav-caption">WORKSPACE</div>
+            <nav class="main-nav" aria-label="Main navigation">
+                {% set nav_items = [
+                    ('home', 'home', 'Home', '⌂'),
+                    ('dashboard', 'dashboard', 'Dashboard', '▦'),
+                    ('records', 'records', 'Money Records', '↕'),
+                    ('alerts', 'alerts', 'Alerts', '◉'),
+                    ('reports', 'reports', 'Reports', '▤'),
+                    ('settings', 'settings_page', 'Settings', '⚙')
+                ] %}
+                {% for key, endpoint, label, icon in nav_items %}
+                <a class="nav-link {% if page == key %}active{% endif %}" href="{{ url_for(endpoint) }}">
+                    <span class="nav-icon" aria-hidden="true">{{ icon }}</span>
+                    <span>{{ label }}</span>
+                    {% if key == 'alerts' and unread_notification_count %}<span class="nav-badge">{{ unread_notification_count }}</span>{% endif %}
+                </a>
+                {% endfor %}
+            </nav>
+            <div class="sidebar-bottom">
+                <div class="tip-card">
+                    <span class="tip-icon">✳</span>
+                    <strong>Small steps add up.</strong>
+                    <p>A little awareness today can mean more freedom tomorrow.</p>
+                    <a href="{{ url_for('reports') }}">See your progress <span>→</span></a>
+                </div>
+                <div class="profile">
+                    <div class="avatar">{{ g.user.username[:1]|upper }}</div>
+                    <div class="profile-copy"><strong>{{ g.user.username }}</strong><span>Personal account</span></div>
+                    <form method="post" action="{{ url_for('logout') }}" class="logout-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="logout-button" type="submit">Log out</button></form>
+                </div>
+            </div>
+        </aside>
+        <main class="main-area">
+            <header class="topbar">
+                <button class="menu-toggle" id="menu-toggle" aria-label="Open navigation" aria-expanded="false">☰</button>
+                <div class="breadcrumb">Workspace <span>/</span> <strong>{% block breadcrumb %}Home{% endblock %}</strong></div>
+                <div class="topbar-right">
+                    <span class="today-label">{{ now_label|default('Your personal money space') }}</span>
+                    <a class="top-avatar" href="{{ url_for('settings_page') }}" aria-label="Open settings">{{ g.user.username[:1]|upper }}</a>
+                </div>
+            </header>
+            <div class="page-content">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                        <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                {% block content %}{% endblock %}
+                <footer class="site-footer"><span>© {{ current_year|default('2026') }} Smart Money</span><span>Made for a clearer money picture <span class="footer-heart">♥</span></span></footer>
+            </div>
+        </main>
+    </div>
+    <div class="mobile-scrim" id="mobile-scrim"></div>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local database and user-uploaded photos
+smart_money.db
+smart_money.db-shm
+smart_money.db-wal
+instance/uploads/
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.vscode/

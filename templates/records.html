@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Money Records{% endblock %}
+{% block breadcrumb %}Money Records{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><span class="live-dot"></span> YOUR CASH, IN CLEAR VIEW</div><h1>Money records</h1><p>Track cash in your home, know what you have, and keep a history.</p></div><a class="button button-primary" href="#add-cash-record">＋ Record cash</a></div>
+
+<section class="cash-overview">
+    <article class="cash-balance-card"><div class="cash-balance-top"><span>Expected cash balance</span><span class="cash-balance-symbol">₹</span></div><strong>₹ {{ money(cash_balance / 100) }}</strong><p>Automatically calculated from all cash added and removed.</p><div class="cash-balance-rule"></div><span class="cash-currency-label">ALL TRANSACTIONS IN INDIAN RUPEES · INR</span></article>
+    <article class="cash-location-card"><div class="panel-heading"><div><h2>By storage location</h2><p>Expected amount in each place</p></div><span class="location-card-icon">⌂</span></div>
+        {% if location_balances %}<div class="location-balance-list">{% for item in location_balances %}<div class="location-balance-row"><span class="location-dot"></span><span>{{ item.location }}</span><strong>₹ {{ money(item.balance_paise / 100) }}</strong></div>{% endfor %}</div>
+        {% else %}<div class="location-empty">Your saved locations and balances will appear here.</div>{% endif %}
+    </article>
+</section>
+
+<section class="panel add-record-panel cash-form-panel" id="add-cash-record"><div class="panel-heading"><div><h2>Record cash</h2><p>Add cash or record money taken from a storage place.</p></div><span class="form-mark">＋</span></div>
+    <form class="record-form cash-record-form" method="post" action="{{ url_for('records') }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>What happened?<select name="direction" required><option value="added">Money added</option><option value="removed">Money removed</option></select></label>
+        <label>Amount (INR)<span class="cash-input-wrap"><span>₹</span><input name="amount" type="number" min="0.01" max="999999999999.99" step="0.01" placeholder="0.00" required></span></label>
+        <label>Storage location<input name="location" placeholder="e.g. Bedroom safe" maxlength="80" required></label>
+        <label>Date and time<input name="transaction_time" type="datetime-local" value="{{ today }}" required></label>
+        <label class="cash-description-label">Description <span class="optional-label">(optional)</span><input name="description" placeholder="Add a short note" maxlength="500"></label>
+        <label class="photo-field">Photo of storage place <span class="optional-label">(optional)</span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"><small>JPG, PNG, or WebP. Up to 5 MB.</small></label>
+        <div class="form-submit"><button class="button button-primary" type="submit">Save transaction <span>→</span></button></div>
+    </form>
+</section>
+
+<section class="panel records-panel cash-history-panel"><div class="panel-heading records-heading"><div><h2>Transaction history <span class="record-count">{{ cash_transactions|length }}</span></h2><p>Every cash addition and removal, newest first.</p></div>
+    <form class="filter-form" method="get" action="{{ url_for('records') }}"><label class="search-box"><span>⌕</span><input name="search" value="{{ search }}" placeholder="Find a location" aria-label="Search cash transactions"></label><select name="direction" aria-label="Filter cash transactions"><option value="">All changes</option><option value="added" {% if direction_filter == 'added' %}selected{% endif %}>Money added</option><option value="removed" {% if direction_filter == 'removed' %}selected{% endif %}>Money removed</option></select><button class="button button-secondary" type="submit">Filter</button></form>
+</div>
+    <div class="table-wrap"><table class="cash-history-table"><thead><tr><th>CHANGE</th><th>STORAGE LOCATION</th><th>DATE AND TIME</th><th>AMOUNT</th><th>PHOTO</th><th>ACTIONS</th></tr></thead><tbody>
+        {% for item in cash_transactions %}<tr><td><span class="cash-direction-icon {{ item.direction }}">{% if item.direction == 'added' %}↗{% else %}↘{% endif %}</span><span class="record-title-cell"><strong>Money {{ item.direction }}</strong>{% if item.description %}<small>{{ item.description }}</small>{% endif %}</span></td><td>{{ item.location }}</td><td>{{ item.transaction_time|replace('T', ' ') }}</td><td class="{% if item.direction == 'added' %}amount-income{% else %}cash-removed-amount{% endif %}">{% if item.direction == 'added' %}+{% else %}−{% endif %}₹ {{ money(item.amount_paise / 100) }}</td><td>{% if item.photo_filename %}<a class="cash-photo-link" href="{{ url_for('cash_photo', filename=item.photo_filename) }}" target="_blank" rel="noopener">View photo ↗</a>{% else %}<span class="no-photo">—</span>{% endif %}</td><td><div class="record-actions"><a class="edit-record-link" href="{{ url_for('edit_cash_record', transaction_id=item.id) }}">Edit</a><form method="post" action="{{ url_for('delete_cash_record', transaction_id=item.id) }}" onsubmit="return confirm('Delete this cash transaction? Your balance will be recalculated.')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="delete-button" type="submit" aria-label="Delete transaction at {{ item.location }}">×</button></form></div></td></tr>
+        {% else %}<tr><td colspan="6"><div class="empty-state">No cash transactions yet. Add or remove cash above to start your history.</div></td></tr>{% endfor %}
+    </tbody></table></div>
+</section>
+
+<details class="legacy-records" {% if budget_search or budget_kind %}open{% endif %}>
+    <summary><span><strong>Budget tracker records</strong><small>Keep using your existing income and expense list.</small></span><span class="legacy-count">{{ budget_transactions|length }} records <b>＋</b></span></summary>
+    <div class="legacy-records-content">
+        <section class="panel add-record-panel"><div class="panel-heading"><div><h2>Add an income or expense</h2><p>This list stays separate from your INR cash balance.</p></div><span class="form-mark">＋</span></div>
+            <form class="record-form" method="post" action="{{ url_for('records') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="record_type" value="budget">
+                <label>What was it for?<input name="title" placeholder="e.g. Weekly groceries" maxlength="100" required></label>
+                <label>Amount<input name="amount" type="number" min="0.01" step="0.01" placeholder="0.00" required></label>
+                <label>Category<select name="category" required><option value="">Choose a category</option><option>Groceries</option><option>Dining</option><option>Shopping</option><option>Bills</option><option>Transport</option><option>Entertainment</option><option>Salary</option><option>Other income</option><option>Other</option></select></label>
+                <label>Type<select name="kind" required><option value="expense">Expense</option><option value="income">Income</option></select></label>
+                <label>Date<input name="transaction_date" type="date" value="{{ today[:10] }}" required></label>
+                <label>Note <span class="optional-label">(optional)</span><input name="note" placeholder="Add a little detail"></label>
+                <div class="form-submit"><button class="button button-primary" type="submit">Save budget record <span>→</span></button></div>
+            </form>
+        </section>
+        <section class="panel records-panel"><div class="panel-heading records-heading"><div><h2>Income and expense history</h2><p>Your existing budget tracker records.</p></div>
+            <form class="filter-form" method="get" action="{{ url_for('records') }}"><label class="search-box"><span>⌕</span><input name="budget_search" value="{{ budget_search }}" placeholder="Search records" aria-label="Search budget records"></label><select name="budget_kind" aria-label="Filter budget records"><option value="">All types</option><option value="expense" {% if budget_kind == 'expense' %}selected{% endif %}>Expenses</option><option value="income" {% if budget_kind == 'income' %}selected{% endif %}>Income</option></select><button class="button button-secondary" type="submit">Filter</button></form>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>NAME</th><th>CATEGORY</th><th>DATE</th><th>AMOUNT</th><th>TYPE</th><th></th></tr></thead><tbody>
+            {% for item in budget_transactions %}<tr><td><span class="table-title-icon {% if item.kind == 'income' %}table-income-icon{% else %}table-expense-icon{% endif %}">{% if item.kind == 'income' %}↗{% else %}↘{% endif %}</span><span class="record-title-cell"><strong>{{ item.title }}</strong>{% if item.note %}<small>{{ item.note }}</small>{% endif %}</span></td><td>{{ item.category }}</td><td>{{ item.transaction_date }}</td><td class="{% if item.kind == 'income' %}amount-income{% endif %}">{% if item.kind == 'income' %}+{% else %}−{% endif %}{{ currency }} {{ money(item.amount) }}</td><td><span class="type-pill {{ item.kind }}">{{ item.kind|title }}</span></td><td><form method="post" action="{{ url_for('delete_budget_record', transaction_id=item.id) }}" onsubmit="return confirm('Delete this budget record?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="delete-button" type="submit" aria-label="Delete {{ item.title }}">×</button></form></td></tr>
+            {% else %}<tr><td colspan="6"><div class="empty-state">No matching budget tracker records.</div></td></tr>{% endfor %}
+        </tbody></table></div>
+    </section>
+    </div>
+</details>
+{% endblock %}

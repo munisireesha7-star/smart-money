@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block breadcrumb %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><span class="live-dot"></span> YOUR MONEY AT A GLANCE</div><h1>Good to see you, {{ g.user.username }} <span class="wave">✳</span></h1><p>Here’s what’s happening with your money this month.</p></div><a class="button button-primary" href="{{ url_for('records') }}#add-cash-record">＋ Add a record</a></div>
+<section class="summary-grid">
+    <article class="summary-card balance-card"><div class="summary-top"><span>Money left this month</span><span class="summary-icon">◉</span></div><strong>{{ currency }} {{ money(income - expenses) }}</strong><div class="summary-foot"><span class="trend-positive">↗ On your way</span><span>Income minus spending</span></div><div class="balance-decoration"></div></article>
+    <article class="summary-card"><div class="summary-top"><span>Total income</span><span class="metric-icon income-icon">↗</span></div><strong>{{ currency }} {{ money(income) }}</strong><div class="summary-foot"><span class="muted">This month</span><span class="metric-note">Money coming in</span></div></article>
+    <article class="summary-card"><div class="summary-top"><span>Total spending</span><span class="metric-icon spend-icon">↘</span></div><strong>{{ currency }} {{ money(expenses) }}</strong><div class="summary-foot"><span class="muted">This month</span><span class="metric-note">Money going out</span></div></article>
+</section>
+<section class="dashboard-grid">
+    <article class="panel spending-panel"><div class="panel-heading"><div><h2>Monthly spending</h2><p>Your budget, at a glance</p></div><a class="subtle-link" href="{{ url_for('reports') }}">View reports <span>→</span></a></div>
+        <div class="budget-info"><div><span>Spent so far</span><strong>{{ currency }} {{ money(expenses) }}</strong></div><div class="budget-right"><span>Monthly budget</span><strong>{{ currency }} {{ money(budget) }}</strong></div></div>
+        <div class="budget-track"><span style="width: {{ [((expenses / budget * 100) if budget else 0), 100]|min }}%"></span></div>
+        <div class="budget-caption"><span>{{ ((expenses / budget * 100) if budget else 0)|round|int }}% of your budget used</span><span>{{ currency }} {{ money([budget - expenses, 0]|max) }} left</span></div>
+        <div class="category-list">
+            {% for item in category_totals %}
+            <div class="category-row"><span class="category-dot dot-{{ loop.index }}"></span><span class="category-name">{{ item.category }}</span><span class="category-bar"><i style="width: {{ [((item.total / expenses * 100) if expenses else 0), 100]|min }}%"></i></span><strong>{{ currency }} {{ money(item.total) }}</strong></div>
+            {% else %}<div class="empty-state compact-empty">Add an expense to see your spending by category.</div>{% endfor %}
+        </div>
+    </article>
+    <article class="panel alert-panel"><div class="panel-heading"><div><h2>A friendly heads-up</h2><p>Purchases above {{ currency }} {{ money(settings.alert_threshold) }}</p></div><span class="panel-heading-icon alert-heading-icon">✧</span></div>
+        {% if alerts %}
+            {% for item in alerts[:3] %}<div class="alert-item"><span class="alert-item-icon">!</span><div class="alert-item-copy"><strong>{{ item.title }}</strong><span>{{ item.category }} · {{ item.transaction_date }}</span></div><strong class="alert-amount">{{ currency }} {{ money(item.amount) }}</strong></div>{% endfor %}
+            <a class="panel-bottom-link" href="{{ url_for('alerts') }}">Review all {{ alert_count }} alerts <span>→</span></a>
+        {% else %}<div class="empty-state">Nothing unusual so far. You’re all caught up!</div>{% endif %}
+    </article>
+</section>
+<section class="panel recent-panel"><div class="panel-heading"><div><h2>Recent activity</h2><p>Your latest money records</p></div><a class="subtle-link" href="{{ url_for('records') }}">See all records <span>→</span></a></div>
+    <div class="table-wrap"><table><thead><tr><th>NAME</th><th>CATEGORY</th><th>DATE</th><th>AMOUNT</th><th>TYPE</th></tr></thead><tbody>
+        {% for item in recent %}<tr><td><span class="table-title-icon {% if item.kind == 'income' %}table-income-icon{% else %}table-expense-icon{% endif %}">{% if item.kind == 'income' %}↗{% else %}↘{% endif %}</span><strong>{{ item.title }}</strong></td><td>{{ item.category }}</td><td>{{ item.transaction_date }}</td><td class="{% if item.kind == 'income' %}amount-income{% endif %}">{% if item.kind == 'income' %}+{% else %}−{% endif %}{{ currency }} {{ money(item.amount) }}</td><td><span class="type-pill {{ item.kind }}">{{ item.kind|title }}</span></td></tr>
+        {% else %}<tr><td colspan="5" class="empty-state">No activity yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+</section>
+{% endblock %}

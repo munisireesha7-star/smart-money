@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block breadcrumb %}Reports{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><span class="live-dot"></span> LITTLE PATTERNS, BIG PICTURE</div><h1>Your money report</h1><p>Take a look at where your money has been going.</p></div><span class="report-period">Last 6 months <span>⌄</span></span></div>
+<section class="cash-report-section">
+    <div class="report-section-heading"><div><div class="eyebrow"><span class="live-dot"></span> HOME CASH LEDGER</div><h2>Cash records report</h2><p>Figures come from saved cash transactions. The remaining balance is expected, not a physical cash count.</p></div></div>
+    <form class="cash-report-filters" method="get" action="{{ url_for('reports') }}">
+        <label>From<input type="date" name="start_date" value="{{ cash_start_date }}" required></label>
+        <label>To<input type="date" name="end_date" value="{{ cash_end_date }}" required></label>
+        <label>Storage location<select name="location"><option value="">All locations</option>{% for location_name in cash_report.locations %}<option value="{{ location_name }}" {% if cash_location == location_name %}selected{% endif %}>{{ location_name }}</option>{% endfor %}</select></label>
+        <button class="button button-primary" type="submit">Apply filters</button>
+        <a class="button button-secondary csv-export-link" href="{{ url_for('export_cash_report_csv', start_date=cash_start_date, end_date=cash_end_date, location=cash_location) }}">Export CSV ↓</a>
+    </form>
+    <div class="cash-report-cards">
+        <article class="cash-report-card"><span>Total cash recorded</span><strong>₹ {{ money(cash_report.totals.total_recorded_paise / 100) }}</strong><small>Total added plus removed during this period</small></article>
+        <article class="cash-report-card"><span>Total money added</span><strong>₹ {{ money(cash_report.totals.total_added_paise / 100) }}</strong><small>Recorded cash additions</small></article>
+        <article class="cash-report-card"><span>Total money removed</span><strong>₹ {{ money(cash_report.totals.total_removed_paise / 100) }}</strong><small>Recorded cash removals</small></article>
+        <article class="cash-report-card cash-report-balance"><span>Expected remaining balance</span><strong>₹ {{ money(cash_report.totals.expected_balance_paise / 100) }}</strong><small>Estimated from filtered records; not physically verified</small></article>
+        <a class="cash-report-card cash-report-unresolved" href="{{ url_for('alerts') }}"><span>Unresolved discrepancies</span><strong>{{ cash_report.unresolved_count }}</strong><small>New or under review · based on count date</small></a>
+    </div>
+    <div class="cash-chart-grid">
+        <article class="panel cash-chart-panel"><div class="panel-heading"><div><h2>Daily cash activity</h2><p>Recorded additions and removals by day</p></div></div><div class="chart-canvas-wrap"><canvas id="daily-cash-chart" aria-label="Daily recorded cash additions and removals"></canvas></div></article>
+        <article class="panel cash-chart-panel"><div class="panel-heading"><div><h2>Monthly cash activity</h2><p>Recorded additions and removals by month</p></div></div><div class="chart-canvas-wrap"><canvas id="monthly-cash-chart" aria-label="Monthly recorded cash additions and removals"></canvas></div></article>
+    </div>
+    <section class="panel report-transactions-panel"><div class="panel-heading"><div><h2>Filtered cash transactions</h2><p>Export includes only the transactions matching these filters.</p></div><span class="record-count">{{ cash_report.transactions|length }}</span></div>
+        <div class="table-wrap"><table class="cash-history-table"><thead><tr><th>TYPE</th><th>STORAGE LOCATION</th><th>DATE AND TIME</th><th>AMOUNT</th><th>DESCRIPTION</th></tr></thead><tbody>
+            {% for item in cash_report.transactions %}<tr><td><span class="type-pill {% if item.direction == 'added' %}income{% else %}expense{% endif %}">Money {{ item.direction }}</span></td><td>{{ item.location }}</td><td>{{ item.transaction_time|replace('T', ' ') }}</td><td>₹ {{ money(item.amount_paise / 100) }}</td><td>{{ item.description or '—' }}</td></tr>
+            {% else %}<tr><td colspan="5"><div class="empty-state compact-empty">No cash transactions match this date range and location.</div></td></tr>{% endfor %}
+        </tbody></table></div>
+    </section>
+    <p class="report-estimate-note">Reports describe only what has been entered in this app. A calculated balance is an estimate and may not match a current physical count if entries are missing or outdated.</p>
+</section>
+
+<div class="report-section-divider"><span>Budget tracker report</span></div>
+<section class="report-summary-grid"><article class="summary-card report-summary"><div class="summary-top"><span>Income this month</span><span class="metric-icon income-icon">↗</span></div><strong>{{ currency }} {{ money(month_income) }}</strong><div class="summary-foot"><span class="muted">Money coming in</span></div></article><article class="summary-card report-summary"><div class="summary-top"><span>Spending this month</span><span class="metric-icon spend-icon">↘</span></div><strong>{{ currency }} {{ money(month_expenses) }}</strong><div class="summary-foot"><span class="muted">Money going out</span></div></article><article class="summary-card report-summary"><div class="summary-top"><span>Money left this month</span><span class="summary-icon pale-green">◉</span></div><strong>{{ currency }} {{ money(month_income - month_expenses) }}</strong><div class="summary-foot"><span class="muted">Income minus spending</span></div></article></section>
+<section class="panel report-chart-panel"><div class="panel-heading"><div><h2>Income & spending</h2><p>A month-by-month look at your money</p></div><div class="chart-legend"><span><i class="legend-green"></i> Income</span><span><i class="legend-navy"></i> Spending</span></div></div>
+    <div class="chart-area"><div class="chart-grid-lines"><span>{{ currency }} {{ money(max_spend) }}</span><span>{{ currency }} {{ money(max_spend * 0.75) }}</span><span>{{ currency }} {{ money(max_spend * 0.5) }}</span><span>{{ currency }} {{ money(max_spend * 0.25) }}</span><span>0</span></div><div class="bar-chart">
+        {% for month in monthly.values() %}<div class="bar-group"><div class="bar-pair"><div class="chart-bar income-bar" style="height: {{ [((month.income / max_spend * 100) if month.income else 2), 100]|min }}%" title="{{ currency }} {{ money(month.income) }} income"></div><div class="chart-bar expense-bar" style="height: {{ [((month.expense / max_spend * 100) if month.expense else 2), 100]|min }}%" title="{{ currency }} {{ money(month.expense) }} spent"></div></div></div>{% endfor %}
+    </div><div class="chart-months">{% for label in month_labels %}<span>{{ label }}</span>{% endfor %}</div></div>
+</section>
+<section class="panel category-report-panel"><div class="panel-heading"><div><h2>Spending by category</h2><p>This month’s expenses, grouped simply</p></div><a class="subtle-link" href="{{ url_for('records', budget_kind='expense') }}">See expenses <span>→</span></a></div>
+    {% if category_rows %}<div class="category-report-list">{% for item in category_rows %}<div class="category-report-row"><span class="category-dot dot-{{ loop.index }}"></span><span class="category-report-name">{{ item.category }}</span><span class="category-report-track"><i style="width: {{ [((item.total / month_expenses * 100) if month_expenses else 0), 100]|min }}%"></i></span><span class="category-report-percent">{{ ((item.total / month_expenses * 100) if month_expenses else 0)|round|int }}%</span><strong>{{ currency }} {{ money(item.total) }}</strong></div>{% endfor %}</div>{% else %}<div class="empty-state">Add an expense to see your categories here.</div>{% endif %}
+</section>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+<script>
+const cashChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: {
+        legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 7, boxHeight: 7, padding: 16, color: "#718079", font: { family: "DM Sans", size: 10 } } },
+        tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ₹ ${Number(context.parsed.y).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } }
+    },
+    scales: {
+        x: { grid: { display: false }, ticks: { color: "#8c9992", maxTicksLimit: 10, maxRotation: 0, font: { family: "DM Sans", size: 9 } }, border: { display: false } },
+        y: { beginAtZero: true, grid: { color: "#edf1ee" }, ticks: { color: "#8c9992", font: { family: "DM Sans", size: 9 }, callback: (value) => `₹ ${Number(value).toLocaleString("en-IN")}` }, border: { display: false } }
+    }
+};
+const cashChartData = {
+    daily: {
+        labels: {{ cash_report.daily_labels|tojson }},
+        added: {{ cash_report.daily_added|tojson }},
+        removed: {{ cash_report.daily_removed|tojson }}
+    },
+    monthly: {
+        labels: {{ cash_report.monthly_labels|tojson }},
+        added: {{ cash_report.monthly_added|tojson }},
+        removed: {{ cash_report.monthly_removed|tojson }}
+    }
+};
+function makeCashChart(canvasId, series) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || typeof Chart === "undefined") return;
+    new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels: series.labels,
+            datasets: [
+                { label: "Money added", data: series.added, backgroundColor: "#78bc91", borderRadius: 4, maxBarThickness: 24 },
+                { label: "Money removed", data: series.removed, backgroundColor: "#344b48", borderRadius: 4, maxBarThickness: 24 }
+            ]
+        },
+        options: cashChartOptions
+    });
+}
+makeCashChart("daily-cash-chart", cashChartData.daily);
+makeCashChart("monthly-cash-chart", cashChartData.monthly);
+</script>
+{% endblock %}

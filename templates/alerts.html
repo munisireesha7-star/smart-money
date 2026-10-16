@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Alerts{% endblock %}
+{% block breadcrumb %}Alerts{% endblock %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow"><span class="live-dot"></span> REVIEW OBSERVATIONS, NOT ASSUMPTIONS</div><h1>Money loss detection</h1><p>Compare your recorded cash balance with a manual count at each storage location.</p></div></div>
+
+<section class="neutral-safety-note"><span class="safety-note-icon">i</span><div><strong>A difference is a prompt to review, not proof that money was stolen.</strong><p>The expected amount is calculated from cash entries saved in this app. The actual amount is a manual count entered by you. Both depend on the records and observation provided; this tool cannot verify them or identify a cause or person. Missing or old entries can explain a difference.</p></div></section>
+
+<section class="panel notification-inbox"><div class="panel-heading"><div><h2>In-app notifications <span class="record-count">{{ unread_notification_count }} unread</span></h2><p>Updates about possible discrepancies and review status.</p></div>{% if unread_notification_count %}<form method="post" action="{{ url_for('mark_all_notifications_read') }}" onsubmit="return confirm('Mark all notifications as read?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-secondary" type="submit">Mark all read</button></form>{% endif %}</div>
+    {% for notification in notifications %}<article class="notification-row {% if not notification.read_at %}notification-unread{% endif %}"><span class="notification-kind-icon notification-{{ notification.notification_type }}">{% if notification.notification_type == 'test' %}✓{% elif notification.notification_type == 'status' %}↻{% else %}◉{% endif %}</span><div class="notification-copy"><strong>{{ notification.title }}</strong><p>{{ notification.message }}</p><span>{{ notification.created_at|replace('T', ' ') }}{% if not notification.read_at %} · Unread{% else %} · Read{% endif %}</span></div>{% if not notification.read_at %}<form method="post" action="{{ url_for('mark_notification_read', notification_id=notification.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="notification-read-button" type="submit">Mark read</button></form>{% endif %}</article>
+    {% else %}<div class="empty-state notification-empty">No in-app notifications yet. Possible discrepancy alerts will appear here when enabled in <a href="{{ url_for('settings_page') }}">notification preferences</a>.</div>{% endfor %}
+</section>
+
+<section class="panel cash-check-panel"><div class="panel-heading"><div><h2>Compare a cash count</h2><p>Choose a recorded location and enter the amount you manually counted.</p></div><span class="form-mark">⌕</span></div>
+    {% if cash_locations %}
+    <form class="record-form cash-check-form" method="post" action="{{ url_for('create_cash_check') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Storage location<select name="location" required><option value="">Choose a recorded location</option>{% for item in cash_locations %}<option value="{{ item.location }}">{{ item.location }}</option>{% endfor %}</select></label>
+        <label>Actual amount counted (INR)<span class="cash-input-wrap"><span>₹</span><input name="actual_amount" type="number" min="0" max="999999999999.99" step="0.01" placeholder="0.00" required></span></label>
+        <label>Date and time counted<input name="counted_at" type="datetime-local" value="{{ count_now }}" required></label>
+        <label class="ledger-confirmation"><input name="ledger_complete" type="checkbox" value="yes" required><span><strong>I have recorded all cash added and removed at this location up to the count time.</strong><small>This check cannot be compared safely if relevant cash entries are missing.</small></span></label>
+        <div class="form-submit"><button class="button button-primary" type="submit">Compare amounts <span>→</span></button></div>
+    </form>
+    <p class="count-form-footnote">The expected amount is calculated only from entries at the selected location dated on or before your count time. If records are missing, add or correct them in <a href="{{ url_for('records') }}">Money Records</a> before relying on the comparison.</p>
+    {% else %}
+    <div class="empty-state check-empty"><strong>No storage locations to compare yet</strong><span>Add cash records with a storage location first. Without ledger entries, there is no expected amount to compare.</span><a class="button button-primary" href="{{ url_for('records') }}#add-cash-record">Add cash records</a></div>
+    {% endif %}
+</section>
+
+<section class="panel discrepancy-panel"><div class="panel-heading"><div><h2>Possible cash discrepancies</h2><p>Differences between the recorded expected amount and a manually entered count.</p></div><span class="record-count">{{ cash_discrepancies|length }}</span></div>
+    {% for item in cash_discrepancies %}
+    <article class="discrepancy-card">
+        <div class="discrepancy-topline"><div class="discrepancy-location"><span class="discrepancy-symbol">!</span><div><strong>{{ item.location }}</strong><span>Possible discrepancy · {{ item.counted_at|replace('T', ' ') }}</span></div></div><span class="status-pill status-{{ item.status|lower|replace(' ', '-') }}">{{ item.status }}</span></div>
+        <div class="discrepancy-values">
+            <div><span>Expected from recorded entries</span><strong>₹ {{ money(item.expected_paise / 100) }}</strong></div>
+            <div><span>Actual amount entered from manual count</span><strong>₹ {{ money(item.actual_paise / 100) }}</strong></div>
+            <div class="difference-value"><span>Difference (actual − expected)</span><strong>{% if item.difference_paise > 0 %}+{% else %}−{% endif %}₹ {{ money((item.difference_paise|abs) / 100) }}</strong></div>
+        </div>
+        <div class="observation-boundary"><strong>User-entered observation:</strong> actual amount and count time. <strong>Calculated from saved entries:</strong> expected amount and difference. This comparison does not establish why the amounts differ or who is responsible.</div>
+        <div class="discrepancy-footer"><span>Latest included cash entry: {{ item.ledger_latest_at|replace('T', ' ') }}</span><form method="post" action="{{ url_for('update_cash_check_status', check_id=item.id) }}" onsubmit="return confirm('Change the review status for this possible discrepancy?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label for="status-{{ item.id }}">Status</label><select id="status-{{ item.id }}" name="status"><option value="New" {% if item.status == 'New' %}selected{% endif %}>New</option><option value="Under Review" {% if item.status == 'Under Review' %}selected{% endif %}>Under Review</option><option value="Resolved" {% if item.status == 'Resolved' %}selected{% endif %}>Resolved</option></select><button class="button button-secondary" type="submit">Update status</button></form></div>
+        {% if item.ledger_outdated %}<div class="ledger-caution"><strong>Ledger may be out of date:</strong> its latest included cash entry was {{ item.ledger_age_days }} days before this count. Missing or unrecorded changes may explain the difference. Update the records and count again before drawing conclusions.</div>
+        {% elif item.later_entries_exist %}<div class="ledger-caution"><strong>Later ledger activity exists:</strong> a cash entry at this location is dated after this count. This alert uses entries only up to the count time; review the later activity when interpreting the comparison.</div>{% endif %}
+    </article>
+    {% else %}
+    <div class="empty-state spacious-empty"><span class="empty-check">✓</span><strong>No possible cash discrepancies recorded</strong><span>When a manual count differs from the expected balance, a neutral review alert will appear here.</span></div>
+    {% endfor %}
+</section>
+
+<section class="panel check-history-panel"><div class="panel-heading"><div><h2>Cash count history</h2><p>Saved comparisons, including counts that matched.</p></div><span class="record-count">{{ cash_checks|length }}</span></div>
+    {% if cash_checks %}<div class="table-wrap"><table class="cash-history-table"><thead><tr><th>LOCATION</th><th>COUNTED AT</th><th>EXPECTED</th><th>MANUAL COUNT</th><th>DIFFERENCE</th><th>RESULT</th></tr></thead><tbody>
+    {% for check in cash_checks %}{% set item = check.record %}<tr><td>{{ item.location }}</td><td>{{ item.counted_at|replace('T', ' ') }}</td><td>₹ {{ money(item.expected_paise / 100) }}</td><td>₹ {{ money(item.actual_paise / 100) }}</td><td>{% if item.difference_paise > 0 %}+{% elif item.difference_paise < 0 %}−{% endif %}₹ {{ money((item.difference_paise|abs) / 100) }}</td><td>{% if item.status %}<span class="status-pill status-{{ item.status|lower|replace(' ', '-') }}">{{ item.status }}</span>{% else %}<span class="status-pill status-matched">Matched</span>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<div class="empty-state compact-empty">No cash counts have been compared yet.</div>{% endif %}
+</section>
+
+<details class="legacy-alerts"><summary><span><strong>Spending alerts</strong><small>Purchases above your selected alert amount.</small></span><span class="legacy-count">{{ alerts|length }} alerts <b>＋</b></span></summary>
+    <section class="panel alert-list-panel"><div class="panel-heading"><div><h2>Purchases to review</h2><p>Friendly reminders for larger expenses.</p></div><span class="record-count">{{ alerts|length }}</span></div>
+        {% for item in alerts %}<div class="full-alert-row"><div class="full-alert-icon">!</div><div class="full-alert-copy"><strong>{{ item.title }}</strong><span>{{ item.category }} <span class="alert-separator">·</span> {{ item.transaction_date }}</span>{% if item.note %}<small>{{ item.note }}</small>{% endif %}</div><div class="full-alert-amount"><strong>{{ currency }} {{ money(item.amount) }}</strong><span>Above your alert amount</span></div><a class="alert-record-link" href="{{ url_for('records', budget_search=item.title) }}" aria-label="View {{ item.title }} in records">↗</a></div>
+        {% else %}<div class="empty-state spacious-empty"><span class="empty-check">✓</span><strong>No spending alerts</strong><span>If an expense reaches {{ currency }} {{ money(settings.alert_threshold) }}, we’ll show it here.</span></div>{% endfor %}
+    </section>
+</details>
+<div class="small-note">Spending alert threshold: {{ currency }} {{ money(settings.alert_threshold) }}. <a href="{{ url_for('settings_page') }}">Change in Settings</a>.</div>
+{% endblock %}

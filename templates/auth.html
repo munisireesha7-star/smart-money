@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#142b4a">
+    <title>{% if mode == 'register' %}Create account{% else %}Log in{% endif %} · Smart Money</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="auth-page">
+    <main class="auth-card">
+        <a class="brand auth-brand" href="{{ url_for('login') }}"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 17.5 9.2 12l3.5 3.4L20 7.5"/><path d="M14.8 7.5H20v5.2"/></svg></span><span class="brand-copy"><strong>smart<span>money</span></strong><small>YOUR MONEY, IN FOCUS</small></span></a>
+        <div class="auth-heading"><div class="eyebrow"><span class="live-dot"></span> YOUR PRIVATE MONEY SPACE</div><h1>{% if mode == 'register' %}Create your account{% else %}Welcome back{% endif %}</h1><p>{% if mode == 'register' %}Make an account to keep your records private and secure.{% else %}Log in to see your personal money records.{% endif %}</p></div>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}<div class="flash flash-{{ category }}" role="status">{{ message }}</div>{% endfor %}
+        {% endwith %}
+        <form class="auth-form" method="post" autocomplete="on">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>Username<input name="username" type="text" minlength="3" maxlength="40" pattern="[A-Za-z0-9_.-]{3,40}" autocomplete="username" required autofocus></label>
+            <label>Password<input name="password" type="password" minlength="{% if mode == 'register' %}12{% else %}1{% endif %}" maxlength="128" autocomplete="{% if mode == 'register' %}new-password{% else %}current-password{% endif %}" required>{% if mode == 'register' %}<small>Use 12–128 characters. Use a unique password. Do not use a bank PIN, OTP, or payment password.</small>{% endif %}</label>
+            <button class="button button-primary auth-submit" type="submit">{% if mode == 'register' %}Create account{% else %}Log in{% endif %}<span>→</span></button>
+        </form>
+        <p class="auth-switch">{% if mode == 'register' %}Already registered? <a href="{{ url_for('login') }}">Log in</a>{% else %}New to Smart Money? <a href="{{ url_for('register') }}">Create an account</a>{% endif %}</p>
+        <p class="auth-privacy">Only a username and password are requested. No bank PINs, OTPs, or payment passwords.</p>
+    </main>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
