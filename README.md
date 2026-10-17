@@ -50,6 +50,22 @@ Vercel functions do not provide durable local disk storage. This project uses Po
 
 `DATABASE_URL` and `SMART_MONEY_SECRET_KEY` must be set before the app starts on Vercel. Uploaded photos are limited to 4 MB to fit serverless request limits. Do not add database URLs or secrets to GitHub. Local SQLite data is not automatically migrated to PostgreSQL.
 
+## Deploy to Railway
+
+Railway runs the Flask app with Gunicorn. Use a Railway PostgreSQL service so account data and uploaded photos are stored persistently; do not use the local SQLite database for a public deployment.
+
+1. Push the project to GitHub and sign in to [Railway](https://railway.com/).
+2. Create a new Railway project and deploy the `munisireesha7-star/smart-money` GitHub repository.
+3. Add a PostgreSQL service to the same Railway project.
+4. In the web service's **Variables** settings, add:
+   - `DATABASE_URL`: reference the PostgreSQL service's `DATABASE_URL` variable (Railway supports references such as `${{Postgres.DATABASE_URL}}`; use your database service's actual name).
+   - `SMART_MONEY_SECRET_KEY`: a long random secret generated locally with `py -c "import secrets; print(secrets.token_hex(32))"`. Enter it directly in Railway and do not commit or share it.
+   - `SMART_MONEY_COOKIE_SECURE`: `true`.
+5. Redeploy the web service. Railway reads `railway.json`, installs `requirements.txt`, and starts Gunicorn. The health check uses `/login`.
+6. Open the generated Railway domain and verify account creation, login, records, photos, alerts, and reports.
+
+Environment variables must be configured on the web service (not only the PostgreSQL service). Do not paste secrets into chat or commit them to GitHub. Local SQLite data is not automatically migrated to PostgreSQL.
+
 ## Existing databases
 
 On startup, the app adds nullable account ownership columns to an existing database. Old rows without an owner remain unowned and are not shown to newly registered accounts. They are not automatically assigned to the first account.
