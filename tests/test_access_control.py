@@ -8,6 +8,7 @@ import zlib
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import app as smart_money
 
@@ -495,6 +496,20 @@ class AccessControlTests(unittest.TestCase):
                 smart_money.app.config.pop("DATABASE_URL", None)
             else:
                 smart_money.app.config["DATABASE_URL"] = previous_url
+
+    def test_postgres_row_factory_uses_psycopg_factory_signature(self):
+        cursor = SimpleNamespace(
+            description=[
+                SimpleNamespace(name="id"),
+                SimpleNamespace(name="username"),
+            ]
+        )
+        make_row = smart_money.postgres_row_factory(cursor)
+        row = make_row((7, "alice"))
+
+        self.assertEqual(row["id"], 7)
+        self.assertEqual(row["username"], "alice")
+        self.assertEqual(row[0], 7)
 
 
 if __name__ == "__main__":

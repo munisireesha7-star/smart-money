@@ -51,7 +51,7 @@ class HybridRow(dict):
         return super().__getitem__(key)
 
 
-def postgres_row_factory(cursor, row):
+def postgres_row_factory(cursor):
     names = [column.name for column in cursor.description]
     return lambda values: HybridRow(zip(names, values))
 
